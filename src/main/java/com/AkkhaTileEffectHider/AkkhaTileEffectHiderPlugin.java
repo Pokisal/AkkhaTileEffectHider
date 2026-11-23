@@ -1,28 +1,31 @@
 package com.AkkhaTileEffectHider;
 
 import com.google.common.collect.ImmutableSet;
-import java.util.HashSet;
+import com.google.inject.Provides;
 import java.util.Set;
 import javax.inject.Inject;
 import net.runelite.api.Client;
 import net.runelite.api.GraphicsObject;
+import net.runelite.api.NPC;
 import net.runelite.api.Renderable;
 import net.runelite.api.coords.LocalPoint;
 import net.runelite.api.coords.WorldPoint;
-import net.runelite.api.events.ClientTick;
+import net.runelite.api.events.GameTick;
+import net.runelite.api.events.NpcDespawned;
 import net.runelite.client.callback.Hooks;
+import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
-import com.google.inject.Provides;
-import net.runelite.client.config.ConfigManager;
 
-@PluginDescriptor(name = "Akkha Tile Effect Hider", description = "Hides Akkha's Shadow Attack over the memory puzzle so they no longer overlap")
+@PluginDescriptor(name = "Akkha Tile Effect Hider", description = "Hides Akkha's shadow attack after Akkha starts his memory special")
 public class AkkhaTileEffectHiderPlugin extends Plugin
 {
-	private static final Set<Integer> IDS = ImmutableSet.of(2256, 2257, 2258, 2259);
+	private static final Set<Integer> GRAPHIC_IDS = ImmutableSet.of(2256, 2257, 2258, 2259);
+	private static final Set<Integer> NPC_IDS = ImmutableSet.of(11790, 11791, 11792);
+	private static final int HIDE_TICKS = 6;
 
-	// South-west corner of the 4x4 area (template coordinates)
+	// Center 2x2's south-west tile (template coordinates)
 	private static final int CENTER_SW_X = 3680;
 	private static final int CENTER_SW_Y = 5407;
 	private static final int PLANE = 1;
@@ -32,7 +35,7 @@ public class AkkhaTileEffectHiderPlugin extends Plugin
 	@Inject private AkkhaTileEffectHiderConfig config;
 
 	private final Hooks.RenderableDrawListener drawListener = this::shouldDraw;
-	private boolean hideActive;
+	private int ticksRemaining;
 
 	@Provides
 	AkkhaTileEffectHiderConfig provideConfig(ConfigManager configManager)
@@ -50,35 +53,35 @@ public class AkkhaTileEffectHiderPlugin extends Plugin
 	protected void shutDown()
 	{
 		hooks.unregisterRenderableDrawListener(drawListener);
-		hideActive = false;
+		ticksRemaining = 0;
 	}
 
-	// Detection: all four IDs present anywhere
+	// Akkha disappears: either he started the memory special or the shadow slam can't happen so it doesn't matter
 	@Subscribe
-	public void onClientTick(ClientTick tick)
+	public void onNpcDespawned(NpcDespawned event)
 	{
-		Set<Integer> found = new HashSet<>();
-		for (GraphicsObject go : client.getTopLevelWorldView().getGraphicsObjects())
+		NPC npc = event.getNpc();
+		if (NPC_IDS.contains(npc.getId()))
 		{
-			if (IDS.contains(go.getId()))
-			{
-				found.add(go.getId());
-				if (found.size() == IDS.size())
-				{
-					break;
-				}
-			}
+			ticksRemaining = HIDE_TICKS;
 		}
-		hideActive = found.size() == IDS.size();
 	}
 
-	// Hiding: only inside the 4x4
+	@Subscribe
+	public void onGameTick(GameTick tick)
+	{
+		if (ticksRemaining > 0)
+		{
+			ticksRemaining--;
+		}
+	}
+
 	private boolean shouldDraw(Renderable renderable, boolean drawingUI)
 	{
-		if (hideActive && renderable instanceof GraphicsObject)
+		if (ticksRemaining > 0 && renderable instanceof GraphicsObject)
 		{
 			GraphicsObject go = (GraphicsObject) renderable;
-			if (IDS.contains(go.getId()) && inArea(go.getLocation()))
+			if (GRAPHIC_IDS.contains(go.getId()) && inArea(go.getLocation()))
 			{
 				return false;
 			}
